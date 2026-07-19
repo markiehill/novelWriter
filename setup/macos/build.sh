@@ -142,10 +142,23 @@ done
 cp $SRC_DIR/setup/macos/novelwriter.icns novelWriter.app/Contents/Resources/
 
 # Create entry script
+#echo "Creating entry script ..."
+#cat > novelWriter.app/Contents/MacOS/novelWriter << EOF
+#!/bin/bash
+#DIR="\$( cd "\$( dirname "\${BASH_SOURCE[0]}" )" && pwd )"
+#\$DIR/../Resources/bin/python -sE \$DIR/../Resources/novelWriter/novelWriter.py \$@
+#EOF
+
+# Create entry script
 echo "Creating entry script ..."
 cat > novelWriter.app/Contents/MacOS/novelWriter << EOF
 #!/bin/bash
 DIR="\$( cd "\$( dirname "\${BASH_SOURCE[0]}" )" && pwd )"
+
+# Force Enchant to look inside the application bundle for its dictionaries
+export ENCHANT_DICTIONARY_PATH="\$DIR/../Resources/share/hunspell"
+export DICPATH="\$DIR/../Resources/share/hunspell"
+
 \$DIR/../Resources/bin/python -sE \$DIR/../Resources/novelWriter/novelWriter.py \$@
 EOF
 
