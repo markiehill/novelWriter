@@ -149,16 +149,23 @@ cp $SRC_DIR/setup/macos/novelwriter.icns novelWriter.app/Contents/Resources/
 #\$DIR/../Resources/bin/python -sE \$DIR/../Resources/novelWriter/novelWriter.py \$@
 #EOF
 
-# Create entry script
 echo "Creating entry script ..."
 cat > novelWriter.app/Contents/MacOS/novelWriter << EOF
 #!/bin/bash
 DIR="\$( cd "\$( dirname "\${BASH_SOURCE[0]}" )" && pwd )"
 
-# Force Enchant to look inside the application bundle for its dictionaries
-export ENCHANT_DICTIONARY_PATH="\$DIR/../Resources/share/hunspell"
-export DICPATH="\$DIR/../Resources/share/hunspell"
+# 1. Point standard paths directly to our inside assets
+export ENCHANT_DICTIONARY_PATH="\$DIR/../Resources/share/hunspell:\$DIR/../Resources/share/enchant/hunspell"
+export DICPATH="\$DIR/../Resources/share/hunspell:\$DIR/../Resources/share/enchant/hunspell"
+export HUNSPELL_DICTIONARY_PATH="\$DIR/../Resources/share/hunspell"
 
+# 2. Backport a local user config bridge for Enchant 2 on macOS
+mkdir -p "\$HOME/Library/Application Support/enchant/hunspell"
+if [ -d "\$DIR/../Resources/share/hunspell" ]; then
+    ln -sf "\$DIR/../Resources/share/hunspell"/* "\$HOME/Library/Application Support/enchant/hunspell/" 2>/dev/null || true
+fi
+
+# 3. Fire the launcher bundle
 \$DIR/../Resources/bin/python -sE \$DIR/../Resources/novelWriter/novelWriter.py \$@
 EOF
 
