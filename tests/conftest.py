@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pytest
 
-from PyQt6.QtCore import QLocale
+from PyQt6.QtCore import QLocale, QThreadPool
 from PyQt6.QtWidgets import QMessageBox
 
 sys.path.insert(1, str(Path(__file__).parent.parent.absolute()))
@@ -39,11 +39,10 @@ from novelwriter.config import DEF_GUI_DARK, DEF_GUI_LIGHT
 from novelwriter.enum import nwTheme
 
 from tests.mocked import MockGuiMain
-from tests.tools import cleanProject
 
 _TST_ROOT = Path(__file__).parent
 _SRC_ROOT = _TST_ROOT.parent
-_TMP_ROOT = _TST_ROOT / "temp"
+_TMP_ROOT = _TST_ROOT / "_temp"
 _TMP_CONF = _TMP_ROOT / "conf"
 
 
@@ -121,8 +120,8 @@ def tstPaths():
 
     class _Store:
         testDir = _TST_ROOT
-        filesDir = _TST_ROOT / "files"
-        refDir = _TST_ROOT / "reference"
+        filesDir = _TST_ROOT / "_files"
+        refDir = _TST_ROOT / "_reference"
         outDir = _TMP_ROOT / "results"
         tmpDir = _TMP_ROOT
         cnfDir = _TMP_CONF
@@ -205,7 +204,13 @@ def nwGUI(qtbot, monkeypatch, functionFixture):
     nwGUI.show()
     qtbot.wait(20)
 
-    return nwGUI
+    yield nwGUI
+
+    # Let any in-flight background jobs (word counter, text checker)
+    # finish and deliver their queued signals before the widget tree
+    # below them is closed and scheduled for deletion
+    if globalPool := QThreadPool.globalInstance():
+        globalPool.waitForDone(7000)
 
 
 ##
@@ -244,18 +249,23 @@ def prjLipsum():
     """A medium sized novelWriter example project with a lot of Lorem
     Ipsum text.
     """
-    srcDir = _TST_ROOT / "lipsum"
-    dstDir = _TMP_ROOT / "lipsum"
-    if dstDir.exists():
-        shutil.rmtree(dstDir)
+    src = _TST_ROOT / "_lipsum"
+    dst = _TMP_ROOT / "lipsum"
+    if dst.exists():
+        shutil.rmtree(dst)
 
-    shutil.copytree(srcDir, dstDir)
-    cleanProject(dstDir)
+    shutil.copytree(src, dst)
 
-    yield dstDir
+    # Delete all generated files
+    (dst / "nwProject.bak").unlink(missing_ok=True)
+    (dst / "ToC.txt").unlink(missing_ok=True)
+    if (meta := dst / "meta").is_dir():
+        shutil.rmtree(meta)
 
-    if dstDir.exists():
-        shutil.rmtree(dstDir)
+    yield dst
+
+    if dst.exists():
+        shutil.rmtree(dst)
 
 
 @pytest.fixture(scope="session")

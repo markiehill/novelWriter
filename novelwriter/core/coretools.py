@@ -22,7 +22,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 from __future__ import annotations
 
 import logging
-import re
 import shutil
 
 from functools import partial
@@ -34,14 +33,13 @@ from PyQt6.QtCore import QCoreApplication
 
 from novelwriter import CONFIG, SHARED
 from novelwriter.common import isHandle, minmax, safeExists, safeIsFile, simplified
-from novelwriter.constants import nwConst, nwFiles, nwItemClass, nwStats
+from novelwriter.constants import nwFiles, nwItemClass, nwStats
 from novelwriter.core.project import NWProject
-from novelwriter.core.storage import NWStorageCreate
+from novelwriter.core.storage import ProjectStorageCreate
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from novelwriter.core.item import NWItem
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +87,7 @@ class DocMerger:
         sItem = self._project.tree[sHandle]
         if sItem and sItem.itemParent:
             tHandle = self._project.newFile(label, sItem.itemParent)
-            if nwItem := self._project.tree[tHandle]:
+            if nwItem := self._project.tree[tHandle]:  # pragma: no branch
                 nwItem.setLayout(sItem.itemLayout)
                 nwItem.setStatus(sItem.itemStatus)
                 nwItem.setImport(sItem.itemImport)
@@ -214,6 +212,8 @@ class DocSplitter:
                         pHandle = hHandle[2] or hHandle[1] or hHandle[0]
                     elif hLevel == 4:
                         pHandle = hHandle[3] or hHandle[2] or hHandle[1] or hHandle[0]
+                    else:  # pragma: no cover
+                        pass
 
                 if (dHandle := self._project.newFile(docLabel, pHandle)) and (nwItem := self._project.tree[dHandle]):
                     hHandle[hLevel] = dHandle
@@ -273,80 +273,6 @@ class DocDuplicator:
         return result
 
 
-class DocSearch:
-    """Tool: Search Documents.
-
-    A global document search class.
-    """
-
-    def __init__(self) -> None:
-        self._regEx = re.compile(r"")
-        self._opts = re.IGNORECASE
-        self._words = False
-        self._escape = True
-
-    ##
-    #  Methods
-    ##
-
-    def setCaseSensitive(self, state: bool) -> None:
-        """Set the case sensitive search flag."""
-        self._opts = 0 if state else re.IGNORECASE
-
-    def setWholeWords(self, state: bool) -> None:
-        """Set the whole words search flag."""
-        self._words = state
-
-    def setUserRegEx(self, state: bool) -> None:
-        """Set the escape flag to the opposite state."""
-        self._escape = not state
-
-    def iterSearch(self, project: NWProject, search: str) -> Iterable[tuple[NWItem, list[tuple[int, int, str]], bool]]:
-        """Iterate through documents in a project and apply search."""
-        self._regEx = re.compile(self._buildPattern(search), self._opts)
-        logger.debug("Searching with pattern '%s'", self._regEx.pattern)
-        storage = project.storage
-        SHARED.initMainProgress(len(project.tree))
-        for item in project.tree:
-            SHARED.incMainProgress()
-            if item.isFileType():
-                results, capped = self.searchText(storage.getDocumentText(item.itemHandle))
-                yield item, results, capped
-        SHARED.clearMainProgress()
-        return
-
-    def searchText(self, text: str) -> tuple[list[tuple[int, int, str]], bool]:
-        """Search a piece of text for RegEx matches."""
-        count = 0
-        capped = False
-        results = []
-        for res in self._regEx.finditer(text):
-            pos = res.start(0)
-            num = len(res.group(0))
-            lim = text[:pos].rfind("\n") + 1
-            cut = text[lim:pos].rfind(" ") + lim + 1
-            context = text[cut : cut + 100].partition("\n")[0]
-            if context:
-                results.append((pos, num, context))
-                count += 1
-                if count >= nwConst.MAX_SEARCH_RESULT:
-                    capped = True
-                    break
-        return results, capped
-
-    ##
-    #  Internal Functions
-    ##
-
-    def _buildPattern(self, search: str) -> str:
-        """Build the search pattern string."""
-        if self._escape:
-            search = re.escape(search)
-        if self._words:
-            search = f"(?:^|\\b){search}(?:$|\\b)"
-        return search
-
-
 class ProjectBuilder:
     """A class to build a new project from a set of user-defined
     parameter provided by the New Project Wizard.
@@ -390,10 +316,10 @@ class ProjectBuilder:
         """Build a blank project from a data dictionary."""
         project = NWProject()
         status = project.storage.createNewProject(path)
-        if status == NWStorageCreate.NOT_EMPTY:
+        if status == ProjectStorageCreate.NOT_EMPTY:
             SHARED.error(self.tr("The target folder is not empty. Please choose another folder."))
             return False
-        elif status == NWStorageCreate.OS_ERROR:
+        elif status == ProjectStorageCreate.OS_ERROR:
             SHARED.error(
                 self.tr("An error occurred while trying to create the project."),
                 exc=project.storage.exc,
@@ -484,7 +410,7 @@ class ProjectBuilder:
 
         addNotes = data.get("notes", False)
         for newRoot in data.get("roots", []):
-            if newRoot in nwItemClass:
+            if isinstance(newRoot, nwItemClass):
                 rHandle = project.newRoot(newRoot)
                 if addNotes:
                     aHandle = project.newFile(noteTitles[newRoot], rHandle)

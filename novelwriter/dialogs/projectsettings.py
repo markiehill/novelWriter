@@ -27,7 +27,7 @@ import logging
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QCloseEvent, QColor
+from PyQt6.QtGui import QAction, QCloseEvent, QColor
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -49,7 +49,7 @@ from PyQt6.QtWidgets import (
 from novelwriter import CONFIG, SHARED
 from novelwriter.common import formatFileFilter, qtAddAction, qtLambda, simplified
 from novelwriter.constants import nwLabels, trConst
-from novelwriter.core.status import CUSTOM_COL, NWStatus, StatusEntry
+from novelwriter.core.status import CUSTOM_COL, ItemStatus, StatusEntry
 from novelwriter.enum import nwStandardButton, nwStatusShape, nwToolButton
 from novelwriter.extensions.configlayout import NColorLabel, NFixedPage, NScrollableForm
 from novelwriter.extensions.modified import NComboBox, NDialog, NIconToolButton
@@ -182,6 +182,8 @@ class GuiProjectSettings(NDialog):
             self.mainStack.setCurrentWidget(self.importPage)
         elif pageId == self.PAGE_REPLACE:
             self.mainStack.setCurrentWidget(self.replacePage)
+        else:  # pragma: no cover
+            pass
 
     @pyqtSlot()
     def _doSave(self) -> None:
@@ -416,13 +418,10 @@ class _StatusPage(NFixedPage):
         self.colorButton.clicked.connect(self._onColorSelect)
 
         def buildMenu(menu: QMenu | None, items: dict[nwStatusShape, str]) -> None:
-            if menu is not None:
+            if menu is not None:  # pragma: no branch
                 for shape, label in items.items():
-                    icon = NWStatus.createIcon(self._iPx, iColor, shape)
-                    action = qtAddAction(menu, trConst(label))
-                    action.setIcon(icon)
-                    action.triggered.connect(qtLambda(self._selectShape, shape))
-                    menu.addAction(action)
+                    icon = ItemStatus.createIcon(self._iPx, iColor, shape)
+                    qtAddAction(menu, trConst(label), icon=icon, data=shape)
                     self._icons[shape] = icon
 
         self.shapeMenu = QMenu(self)
@@ -430,6 +429,7 @@ class _StatusPage(NFixedPage):
         buildMenu(self.shapeMenu.addMenu(self.tr("Circles ...")), nwLabels.SHAPES_CIRCLE)
         buildMenu(self.shapeMenu.addMenu(self.tr("Bars ...")), nwLabels.SHAPES_BARS)
         buildMenu(self.shapeMenu.addMenu(self.tr("Blocks ...")), nwLabels.SHAPES_BLOCKS)
+        self.shapeMenu.triggered.connect(self._shapeSelected)
 
         self.shapeButton = NIconToolButton(self, iSz)
         self.shapeButton.setMenu(self.shapeMenu)
@@ -489,7 +489,7 @@ class _StatusPage(NFixedPage):
         if self._changed:
             update = []
             for n in range(self.listBox.topLevelItemCount()):
-                if item := self.listBox.topLevelItem(n):
+                if item := self.listBox.topLevelItem(n):  # pragma: no branch
                     key = item.data(self.C_DATA, self.D_KEY)
                     entry = item.data(self.C_DATA, self.D_ENTRY)
                     update.append((key, entry))
@@ -535,7 +535,7 @@ class _StatusPage(NFixedPage):
         """Create a new status item."""
         color = QColor(100, 100, 100)
         shape = nwStatusShape.SQUARE
-        icon = NWStatus.createIcon(self._iPx, color, shape)
+        icon = ItemStatus.createIcon(self._iPx, color, shape)
         theme = str(self.iconColor.currentData())
         self._addItem(None, StatusEntry(self.tr("New Item"), color, theme, shape, icon, 0))
         self._changed = True
@@ -618,26 +618,28 @@ class _StatusPage(NFixedPage):
                 with open(path, mode="w", encoding="utf-8") as fo:
                     writer = csv.writer(fo)
                     for n in range(self.listBox.topLevelItemCount()):
-                        if item := self.listBox.topLevelItem(n):
+                        if item := self.listBox.topLevelItem(n):  # pragma: no branch
                             entry: StatusEntry = item.data(self.C_DATA, self.D_ENTRY)
                             writer.writerow([entry.shape.name, entry.color.name(), entry.name])
             except Exception as exc:
                 SHARED.error("Could not write file.", exc=exc)
 
+    @pyqtSlot(QAction)
+    def _shapeSelected(self, action: QAction) -> None:
+        """Update the status icon shape."""
+        if isinstance(shape := action.data(), nwStatusShape):
+            self._shape = shape
+            self._setButtonIcons()
+            self._updateIcon()
+
     ##
     #  Internal Functions
     ##
 
-    def _selectShape(self, shape: nwStatusShape) -> None:
-        """Set the current shape."""
-        self._shape = shape
-        self._setButtonIcons()
-        self._updateIcon()
-
     def _updateIcon(self) -> None:
         """Apply changes made to a status icon."""
         if item := self._getSelectedItem():
-            icon = NWStatus.createIcon(self._iPx, self._pickColor(), self._shape)
+            icon = ItemStatus.createIcon(self._iPx, self._pickColor(), self._shape)
             entry: StatusEntry = item.data(self.C_DATA, self.D_ENTRY)
             entry.color = self._color
             entry.shape = self._shape
@@ -685,7 +687,7 @@ class _StatusPage(NFixedPage):
 
     def _setButtonIcons(self) -> None:
         """Set the colour of the colour button."""
-        icon = NWStatus.createIcon(self._iPx, self._pickColor(), nwStatusShape.SQUARE)
+        icon = ItemStatus.createIcon(self._iPx, self._pickColor(), nwStatusShape.SQUARE)
         self.iconColor.setCurrentData(self._theme, CUSTOM_COL)
         self.colorButton.setIcon(icon)
         self.shapeButton.setIcon(self._icons[self._shape])

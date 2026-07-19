@@ -116,9 +116,11 @@ A colour theme ``.conf`` file consists of the following settings:
    link            = blue
    linkvisited     = blue
    accent          = #3087c6
+   toggle          = blue:96
+   searchmatch     = orange:96
 
    [GUI]
-   helptext  = #5c5c5c
+   helpmeet  = #5c5c5c
    fadedtext = #6c6c6c
    errortext = red
 
@@ -200,6 +202,9 @@ There are several ways to enter colour values:
    added for button and icon roles. Added the ``line`` and ``whitespace`` settings. Dropped the
    ``license``, ``licenseurl``, and ``description`` settings. The  ``author`` field is now required
    if the theme is included in the app, but not for user themes.
+
+.. versionadded:: 26.2
+   The ``toggle`` and ``searchmatch`` settings were added to the ``[Palette]`` section.
 
 
 Icon Themes

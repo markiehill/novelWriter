@@ -43,8 +43,7 @@ from PyQt6.QtWidgets import (
 )
 
 from novelwriter import SHARED
-from novelwriter.common import formatTime, numberToRoman
-from novelwriter.constants import nwUnicode
+from novelwriter.common import formatPercent, formatTime, numberToRoman
 from novelwriter.enum import nwStandardButton
 from novelwriter.extensions.configlayout import NColorLabel, NFixedPage, NScrollablePage
 from novelwriter.extensions.modified import NNonBlockingDialog
@@ -334,13 +333,13 @@ class _ContentsPage(NFixedPage):
         ])
 
         treeHeadItem = self.tocTree.headerItem()
-        if treeHeadItem:
+        if treeHeadItem:  # pragma: no branch
             treeHeadItem.setTextAlignment(self.C_WORDS, QtAlignRight)
             treeHeadItem.setTextAlignment(self.C_PAGES, QtAlignRight)
             treeHeadItem.setTextAlignment(self.C_PAGE, QtAlignRight)
             treeHeadItem.setTextAlignment(self.C_PROG, QtAlignRight)
 
-        if header := self.tocTree.header():
+        if header := self.tocTree.header():  # pragma: no branch
             header.setStretchLastSection(True)
             header.setMinimumSectionSize(12)
 
@@ -463,9 +462,8 @@ class _ContentsPage(NFixedPage):
                 progText = ""
             else:
                 cPage = tPages - fstPage
-                pgProg = 100.0 * (cPage - 1) / pMax if pMax > 0 else 0.0
                 progPage = f"{cPage:n}"
-                progText = f"{pgProg:.1f}{nwUnicode.U_THSP}%"
+                progText = formatPercent(cPage - 1, divisor=pMax, prec=1)
 
             hDec = SHARED.theme.getHeaderDecoration(tLevel)
             if tTitle.strip() == "":

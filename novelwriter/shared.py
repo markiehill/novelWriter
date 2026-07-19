@@ -35,7 +35,7 @@ from PyQt6.QtWidgets import QApplication, QFileDialog, QGridLayout, QMessageBox,
 
 from novelwriter.common import appendIfSet, formatFileFilter, joinLines
 from novelwriter.constants import nwFiles
-from novelwriter.core.spellcheck import NWSpellEnchant
+from novelwriter.core.spellcheck import SpellEnchant
 from novelwriter.enum import nwChange, nwItemClass, nwStandardButton
 from novelwriter.types import QtSizeExpanding, QtSizeMinimum
 
@@ -50,7 +50,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-NWWidget = TypeVar("NWWidget", bound=QWidget)
+NWidget = TypeVar("NWidget", bound=QWidget)
 T_Msg = str | list[str]
 
 RX_HTML = re.compile(r"<.*?>")
@@ -127,7 +127,7 @@ class SharedData(QObject):
         return self._project
 
     @property
-    def spelling(self) -> NWSpellEnchant:
+    def spelling(self) -> SpellEnchant:
         """Return the active NWProject instance."""
         if self._spelling is None:
             raise RuntimeError("SharedData class not fully initialised")
@@ -193,7 +193,7 @@ class SharedData(QObject):
         self._gui = gui
         self._resetProject()
         logger.debug("Ready: SharedData")
-        if pool := QThreadPool.globalInstance():
+        if pool := QThreadPool.globalInstance():  # pragma: no branch
             logger.debug("Thread Pool Max Count: %d", pool.maxThreadCount())
 
     def closeDocument(self, tHandle: str | None = None) -> None:
@@ -322,7 +322,7 @@ class SharedData(QObject):
 
         return NFontDialog.selectFont(current, self.mainGui, self.tr("Select Font"), native)
 
-    def findTopLevelWidget(self, kind: type[NWWidget]) -> NWWidget | None:
+    def findTopLevelWidget(self, kind: type[NWidget]) -> NWidget | None:
         """Find a top level widget."""
         for widget in self.mainGui.children():
             if isinstance(widget, kind):
@@ -472,7 +472,7 @@ class SharedData(QObject):
             del self._project
             del self._spelling
         self._project = NWProject()
-        self._spelling = NWSpellEnchant(self._project)
+        self._spelling = SpellEnchant(self._project)
         self.updateSpellCheckLanguage()
         self._focusMode = False
 
@@ -518,7 +518,7 @@ class _GuiAlert(QMessageBox):
         """Make sure the message box isn't too small."""
         # See https://stackoverflow.com/a/50549396
         self._spacer = QSpacerItem(20 * self._theme.fontPixelSize, 0, QtSizeMinimum, QtSizeExpanding)
-        if isinstance(layout := self.layout(), QGridLayout):
+        if isinstance(layout := self.layout(), QGridLayout):  # pragma: no branch
             layout.addItem(self._spacer, layout.rowCount(), 0, 1, layout.columnCount())
         return self.exec()
 
@@ -555,17 +555,19 @@ class _GuiAlert(QMessageBox):
 
         pSz = 2 * self._theme.fontPixelSize
         if level == self.INFO:
-            self.setIconPixmap(self._theme.getPixmap("alert_info", (pSz, pSz), "info"))
+            self.setIconPixmap(self._theme.getPixmap("alert_info:info", pSz, pSz))
             self.setWindowTitle(self.tr("Information"))
         elif level == self.WARN:
-            self.setIconPixmap(self._theme.getPixmap("alert_warn", (pSz, pSz), "warning"))
+            self.setIconPixmap(self._theme.getPixmap("alert_warn:warning", pSz, pSz))
             self.setWindowTitle(self.tr("Warning"))
         elif level == self.ERROR:
-            self.setIconPixmap(self._theme.getPixmap("alert_error", (pSz, pSz), "error"))
+            self.setIconPixmap(self._theme.getPixmap("alert_error:error", pSz, pSz))
             self.setWindowTitle(self.tr("Error"))
         elif level == self.ASK:
-            self.setIconPixmap(self._theme.getPixmap("alert_question", (pSz, pSz), "info"))
+            self.setIconPixmap(self._theme.getPixmap("alert_question:info", pSz, pSz))
             self.setWindowTitle(self.tr("Question"))
+        else:  # pragma: no cover
+            pass
 
     @pyqtSlot()
     def _onAccept(self) -> None:

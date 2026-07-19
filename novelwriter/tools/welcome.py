@@ -60,8 +60,13 @@ from novelwriter.types import (
     QtAlignRightTop,
     QtDisplayRole,
     QtHexArgb,
+    QtKeyDown,
+    QtKeyEnter,
+    QtKeyReturn,
+    QtKeyUp,
     QtScrollAsNeeded,
     QtSelected,
+    QtWidgetShortcut,
 )
 
 logger = logging.getLogger(__name__)
@@ -98,7 +103,7 @@ class GuiWelcome(NDialog):
         self.nwImage = SHARED.theme.getDecoration("nw-text", h=36)
 
         self.nwLogo = QLabel(self)
-        self.nwLogo.setPixmap(SHARED.theme.getPixmap("novelwriter", (128, 128)))
+        self.nwLogo.setPixmap(SHARED.theme.getPixmap("novelwriter", 128, 128))
 
         self.nwLabel = QLabel(self)
         self.nwLabel.setPixmap(self.nwImage)
@@ -272,12 +277,12 @@ class _OpenProjectPage(QWidget):
         self.listWidget.doubleClicked.connect(self._projectDoubleClicked)
         self.listWidget.customContextMenuRequested.connect(self._openContextMenu)
 
-        if selectionModel := self.listWidget.selectionModel():
+        if selectionModel := self.listWidget.selectionModel():  # pragma: no branch
             selectionModel.currentChanged.connect(self._selectionChange)
 
         # Info / Tool
         self.aMissing = QAction(self)
-        self.aMissing.setIcon(SHARED.theme.getIcon("alert_warn", "warning"))
+        self.aMissing.setIcon(SHARED.theme.getIcon("alert_warn:warning"))
         self.aMissing.setToolTip(self.tr("The project path is not reachable."))
 
         self.selectedPath = QLineEdit(self)
@@ -286,8 +291,8 @@ class _OpenProjectPage(QWidget):
         self._trPath = self.tr("Path")
 
         self.keyEnter = QShortcut(self.listWidget)
-        self.keyEnter.setKeys([Qt.Key.Key_Enter, Qt.Key.Key_Return])
-        self.keyEnter.setContext(Qt.ShortcutContext.WidgetShortcut)
+        self.keyEnter.setKeys([QtKeyEnter, QtKeyReturn])
+        self.keyEnter.setContext(QtWidgetShortcut)
         self.keyEnter.activated.connect(self.openSelectedItem)
 
         self.keyDelete = QShortcut(self)
@@ -318,7 +323,7 @@ class _OpenProjectPage(QWidget):
 
     def keyPressEvent(self, event: QKeyEvent | None) -> None:
         """Capture key press events."""
-        if event and event.key() in (Qt.Key.Key_Up, Qt.Key.Key_Down):
+        if event and event.key() in (QtKeyUp, QtKeyDown):
             self.listWidget.setFocus()
             self.listWidget.keyPressEvent(event)
         else:
@@ -430,17 +435,17 @@ class _ProjectListItem(QStyledItemDelegate):
         self._dFont = SHARED.theme.guiFont
         self._dPen = QPen(SHARED.theme.helpText)
 
-        self._icon = SHARED.theme.getPixmap("proj_nwx", (iPx, iPx))
+        self._icon = SHARED.theme.getPixmap("proj_nwx", iPx, iPx)
 
-    def paint(self, painter: QPainter, opt: QStyleOptionViewItem, index: QModelIndex) -> None:
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
         """Paint a project entry on the canvas."""
-        if isinstance(entry := index.data(QtDisplayRole), _ProjectListEntry):
-            rect = opt.rect
+        if isinstance(entry := index.data(QtDisplayRole), _ProjectListEntry):  # pragma: no branch
+            rect = option.rect
             tFlag = Qt.TextFlag.TextSingleLine
             x, y = self._pPx
 
             painter.save()
-            if opt.state & QtSelected == QtSelected:
+            if bool(option.state & QtSelected):
                 painter.setOpacity(0.25)
                 painter.fillRect(rect, QApplication.palette().text())
                 painter.setOpacity(1.0)
@@ -619,7 +624,7 @@ class _NewProjectForm(QWidget):
         self.projPath = QLineEdit(self)
         self.projPath.setReadOnly(True)
 
-        self.browsePath = NIconToolButton(self, iSz, "browse", "systemio")
+        self.browsePath = NIconToolButton(self, iSz, "browse:systemio")
         self.browsePath.setToolTip(self.tr("Browse for new project path"))
         self.browsePath.clicked.connect(self._doBrowse)
 
@@ -634,21 +639,30 @@ class _NewProjectForm(QWidget):
         self.projFill = QLineEdit(self)
         self.projFill.setReadOnly(True)
 
-        self.browseFill = NIconToolButton(self, iSz, "document_add", "add")
+        self.browseFill = NIconToolButton(self, iSz, "document_add:add")
         self.browseFill.setToolTip(self.tr("Fill new project"))
 
         self.fillMenu = QMenu(self.browseFill)
 
-        self.fillBlank = qtAddAction(self.fillMenu, self.tr("Create a fresh project"))
-        self.fillBlank.setIcon(SHARED.theme.getIcon("document", "file"))
+        self.fillBlank = qtAddAction(
+            self.fillMenu,
+            self.tr("Create a fresh project"),
+            icon=SHARED.theme.getIcon("document:file"),
+        )
         self.fillBlank.triggered.connect(self._setFillBlank)
 
-        self.fillSample = qtAddAction(self.fillMenu, self.tr("Create an example project"))
-        self.fillSample.setIcon(SHARED.theme.getIcon("document_add", "add"))
+        self.fillSample = qtAddAction(
+            self.fillMenu,
+            self.tr("Create an example project"),
+            icon=SHARED.theme.getIcon("document_add:add"),
+        )
         self.fillSample.triggered.connect(self._setFillSample)
 
-        self.fillCopy = qtAddAction(self.fillMenu, self.tr("Copy an existing project"))
-        self.fillCopy.setIcon(SHARED.theme.getIcon("project_copy", "action"))
+        self.fillCopy = qtAddAction(
+            self.fillMenu,
+            self.tr("Copy an existing project"),
+            icon=SHARED.theme.getIcon("project_copy:action"),
+        )
         self.fillCopy.triggered.connect(self._setFillCopy)
 
         self.browseFill.setMenu(self.fillMenu)
@@ -833,6 +847,8 @@ class _NewProjectForm(QWidget):
             text = self.tr("Example Project")
         elif self._fillMode == self.FILL_COPY:
             text = self.tr("Template: {0}").format(str(self._copyPath))
+        else:  # pragma: no cover
+            pass
 
         self.projFill.setText(text)
         self.projFill.setToolTip(text)

@@ -46,11 +46,11 @@ from novelwriter.common import (
 from novelwriter.constants import nwLabels, trConst
 from novelwriter.core.index import Index
 from novelwriter.core.options import OptionState
-from novelwriter.core.projectdata import NWProjectData
+from novelwriter.core.projectdata import ProjectData
 from novelwriter.core.projectxml import ProjectXMLReader, ProjectXMLWriter, XMLReadState
-from novelwriter.core.sessions import NWSessionLog
-from novelwriter.core.storage import NWStorage, NWStorageOpen
-from novelwriter.core.tree import NWTree
+from novelwriter.core.sessions import SessionLog
+from novelwriter.core.storage import ProjectStorage, ProjectStorageOpen
+from novelwriter.core.tree import ProjectTree
 from novelwriter.enum import nwItemClass, nwItemLayout, nwItemType
 from novelwriter.error import logException
 
@@ -94,11 +94,11 @@ class NWProject:
 
         # Core Elements
         self._options = OptionState(self)  # Project-specific GUI options
-        self._storage = NWStorage(self)  # The project storage handler
-        self._data = NWProjectData(self)  # The project settings
-        self._tree = NWTree(self)  # The project tree
+        self._storage = ProjectStorage(self)  # The project storage handler
+        self._data = ProjectData(self)  # The project settings
+        self._tree = ProjectTree(self)  # The project tree
         self._index = Index(self)  # The project index
-        self._session = NWSessionLog(self)  # The session record
+        self._session = SessionLog(self)  # The session record
 
         # Project Status
         self._langData = {}  # Localisation data
@@ -129,15 +129,15 @@ class NWProject:
         return self._options
 
     @property
-    def storage(self) -> NWStorage:
+    def storage(self) -> ProjectStorage:
         return self._storage
 
     @property
-    def data(self) -> NWProjectData:
+    def data(self) -> ProjectData:
         return self._data
 
     @property
-    def tree(self) -> NWTree:
+    def tree(self) -> ProjectTree:
         return self._tree
 
     @property
@@ -145,7 +145,7 @@ class NWProject:
         return self._index
 
     @property
-    def session(self) -> NWSessionLog:
+    def session(self) -> SessionLog:
         return self._session
 
     @property
@@ -284,7 +284,7 @@ class NWProject:
         if itemClass != nwItemClass.NO_CLASS:
             if not (rHandle := self._tree.findRoot(itemClass)):
                 rHandle = self.newRoot(itemClass)
-            if rHandle and (tHandle := SHARED.project.newFile(tag.title(), rHandle)):
+            if rHandle and (tHandle := self.newFile(tag.title(), rHandle)):
                 self.writeNewFile(tHandle, 1, False, f"@tag: {tag}\n\n")
                 self._tree.refreshItems([tHandle])
 
@@ -301,25 +301,27 @@ class NWProject:
         logger.info("Opening project: %s", projPath)
 
         status = self._storage.initProjectStorage(projPath, clearLock)
-        if status != NWStorageOpen.READY:
-            if status == NWStorageOpen.UNKOWN:
+        if status != ProjectStorageOpen.READY:
+            if status == ProjectStorageOpen.UNKOWN:
                 SHARED.error(
                     self.tr("Not a known project file format."),
                     info=self.tr("Path: {0}").format(str(projPath)),
                 )
-            elif status == NWStorageOpen.NOT_FOUND:
+            elif status == ProjectStorageOpen.NOT_FOUND:
                 SHARED.error(
                     self.tr("Project file not found."),
                     info=self.tr("Path: {0}").format(str(projPath)),
                 )
-            elif status == NWStorageOpen.FAILED:
+            elif status == ProjectStorageOpen.FAILED:
                 SHARED.error(
                     self.tr("Failed to open project."),
                     info=self.tr("Path: {0}").format(str(projPath)),
                     exc=self._storage.exc,
                 )
-            elif status == NWStorageOpen.LOCKED:
+            elif status == ProjectStorageOpen.LOCKED:
                 self._state = NWProjectState.LOCKED
+            else:  # pragma: no cover
+                pass
             return False
 
         # Read Project XML
@@ -329,7 +331,7 @@ class NWProject:
         if not isinstance(xmlReader, ProjectXMLReader):
             return False
 
-        self._data = NWProjectData(self)
+        self._data = ProjectData(self)
         projContent = []
         xmlParsed = xmlReader.read(self._data, projContent)
         appVersion = xmlReader.appVersion or self.tr("Unknown")
@@ -351,33 +353,29 @@ class NWProject:
         # Check Legacy Upgrade
         # ====================
 
-        if xmlReader.state == XMLReadState.WAS_LEGACY:
-            msgYes = SHARED.question(
-                self.tr(
-                    "The file format of your project is about to be updated. "
-                    "If you proceed, older versions of novelWriter will no "
-                    "longer be able to open this project. Continue?"
-                )
+        if xmlReader.state == XMLReadState.WAS_LEGACY and not SHARED.question(
+            self.tr(
+                "The file format of your project is about to be updated. "
+                "If you proceed, older versions of novelWriter will no "
+                "longer be able to open this project. Continue?"
             )
-            if not msgYes:
-                return False
+        ):
+            return False
 
         # Check novelWriter Version
         # =========================
 
-        if xmlReader.hexVersion > hexToInt(__hexversion__):
-            msgYes = SHARED.question(
-                self.tr(
-                    "This project was saved by a newer version of "
-                    "novelWriter, version {0}. This is version {1}. If you "
-                    "continue to open the project, some attributes and "
-                    "settings may not be preserved, but the overall project "
-                    "should be fine. Continue opening the project?"
-                ).format(appVersion, __version__),
-                warn=True,
-            )
-            if not msgYes:
-                return False
+        if xmlReader.hexVersion > hexToInt(__hexversion__) and not SHARED.question(
+            self.tr(
+                "This project was saved by a newer version of "
+                "novelWriter, version {0}. This is version {1}. If you "
+                "continue to open the project, some attributes and "
+                "settings may not be preserved, but the overall project "
+                "should be fine. Continue opening the project?"
+            ).format(appVersion, __version__),
+            warn=True,
+        ):
+            return False
 
         # Extract Data
         # ============
@@ -505,7 +503,16 @@ class NWProject:
             SHARED.error(self.tr("Could not create backup folder."), exc=exc)
             return False
 
-        timeStamp = formatTimeStamp(time(), fileSafe=True)
+        match CONFIG.backupInterval:
+            case "day":
+                timeStamp = formatTimeStamp(time(), fileSafe=True, fmt="%Y-%m-%d")
+            case "week":
+                timeStamp = formatTimeStamp(time(), fileSafe=True, fmt="%G-W%V")
+            case "month":
+                timeStamp = formatTimeStamp(time(), fileSafe=True, fmt="%Y-%m")
+            case _:  # Option "session" falls through here
+                timeStamp = formatTimeStamp(time(), fileSafe=True)
+
         archName = baseDir / f"{cleanName} {timeStamp}.zip"
         if self._storage.zipIt(archName, compression=2):
             if doNotify:
@@ -565,7 +572,7 @@ class NWProject:
 
     def countStatus(self) -> None:
         """Count how many times the various status flags are used in the
-        project tree. The counts themselves are kept in the NWStatus
+        project tree. The counts themselves are kept in the ItemStatus
         objects. This is essentially a refresh.
         """
         self._data.itemStatus.resetCounts()
@@ -586,6 +593,8 @@ class NWProject:
             self._data.itemImport.update(update)
             SHARED.emitStatusLabelsChanged(self, kind)
             self._tree.refreshAllItems()
+        else:  # pragma: no cover
+            pass
 
     def updateTheme(self) -> None:
         """Update theme elements."""

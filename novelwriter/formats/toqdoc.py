@@ -38,6 +38,8 @@ from PyQt6.QtGui import (
     QTextDocument,
     QTextFrameFormat,
     QTextLength,
+    QTextTableCellFormat,
+    QTextTableFormat,
 )
 from PyQt6.QtPrintSupport import QPrinter
 
@@ -99,6 +101,8 @@ class ToQTextDocument(Tokenizer):
         "_dUnderline",
         "_dWeight",
         "_document",
+        "_fHead",
+        "_fixedHeadings",
         "_hWeight",
         "_init",
         "_mHead",
@@ -143,9 +147,11 @@ class ToQTextDocument(Tokenizer):
 
         self._pageSize = QPageSize(QPageSize.PageSizeId.A4)
         self._pageMargins = QMarginsF(20.0, 20.0, 20.0, 20.0)
+        self._fixedHeadings = False
 
         self._mHead: dict[BlockTyp, tuple[float, float]] = {}
         self._sHead: dict[BlockTyp, float] = {}
+        self._fHead: dict[BlockTyp, int] = {}
         self._mText: tuple[float, float] = (1.0, 1.0)
         self._mMeta: tuple[float, float] = (1.0, 1.0)
         self._mSep: tuple[float, float] = (1.0, 1.0)
@@ -176,6 +182,10 @@ class ToQTextDocument(Tokenizer):
         """Add markers for page breaks."""
         self._newPage = state
 
+    def setFixedHeadings(self, state: bool) -> None:
+        """Use fixed heading sizes rather than scaling with the text font."""
+        self._fixedHeadings = state
+
     ##
     #  Class Methods
     ##
@@ -199,7 +209,7 @@ class ToQTextDocument(Tokenizer):
             self._printer.setPageMargins(self._pageMargins, QPageLayout.Unit.Millimeter)
             self._textFont.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
             self._document.setPageSize(self._printer.pageRect(QPrinter.Unit.DevicePixel).size())
-            if layout := self._document.documentLayout():
+            if layout := self._document.documentLayout():  # pragma: no branch
                 layout.setPaintDevice(self._printer)
 
         self._document.setDefaultFont(self._textFont)
@@ -234,6 +244,14 @@ class ToQTextDocument(Tokenizer):
             BlockTyp.HEAD2: fPt * self._sizeHead2,
             BlockTyp.HEAD3: fPt * self._sizeHead3,
             BlockTyp.HEAD4: fPt * self._sizeHead4,
+        }
+        self._fHead = {
+            BlockTyp.TITLE: 4,
+            BlockTyp.PART: 4,
+            BlockTyp.HEAD1: 4,
+            BlockTyp.HEAD2: 3,
+            BlockTyp.HEAD3: 2,
+            BlockTyp.HEAD4: 1,
         }
 
         self._mText = (fPx * self._marginText[0], fPx * self._marginText[1])
@@ -325,6 +343,9 @@ class ToQTextDocument(Tokenizer):
                 newBlock(cursor, bFmt)
                 cursor.insertText(nwUnicode.U_NBSP, self._charFmt)
 
+            else:  # pragma: no cover
+                pass
+
             if tStyle & BlockFmt.PBA:
                 self._insertNewPageMarker(cursor)
 
@@ -334,7 +355,7 @@ class ToQTextDocument(Tokenizer):
 
     def saveDocument(self, path: Path) -> None:
         """Save the document as a PDF file."""
-        if self._printer:
+        if self._printer:  # pragma: no branch
             logger.info("Writing PDF ...")
             self._printer.setOutputFileName(str(path))
             self._document.print(self._printer)
@@ -363,7 +384,7 @@ class ToQTextDocument(Tokenizer):
             cursor.insertText(self._localLookup("Footnotes"), cFmt)
 
             for key, index in self._usedNotes.items():
-                if content := self._footnotes.get(key):
+                if content := self._footnotes.get(key):  # pragma: no branch
                     cFmt = QTextCharFormat(self._charFmt)
                     cFmt.setForeground(self._theme.code)
                     cFmt.setAnchor(True)
@@ -418,7 +439,7 @@ class ToQTextDocument(Tokenizer):
             elif fmt == TextFmt.SUB_E:
                 cFmt.setVerticalAlignment(QtVAlignNormal)
             elif fmt == TextFmt.COL_B:
-                if color := self._classes.get(data):
+                if color := self._classes.get(data):  # pragma: no branch
                     cFmt.setForeground(color)
                     primary = color
             elif fmt == TextFmt.COL_E:
@@ -471,37 +492,25 @@ class ToQTextDocument(Tokenizer):
         cursor.insertText(stripEscape(temp[start:]), cFmt)
 
     def _insertNewPageMarker(self, cursor: QTextCursor) -> None:
-        """Insert a new page marker."""
+        """Insert a new page marker as a dashed line."""
         if self._newPage:
-            bgCol = QColor(self._theme.text)
-            bgCol.setAlphaF(0.1)
-            fgCol = QColor(self._theme.text)
-            fgCol.setAlphaF(0.8)
+            tFmt = QTextTableFormat()
+            tFmt.setBorder(0.0)
+            tFmt.setBorderStyle(QTextFrameFormat.BorderStyle.BorderStyle_None)
+            tFmt.setCellPadding(0.0)
+            tFmt.setCellSpacing(0.0)
+            tFmt.setTopMargin(self._mSep[0])
+            tFmt.setBottomMargin(self._mSep[1])
+            tFmt.setWidth(QTextLength(QTextLength.Type.PercentageLength, 100.0))
 
-            fFmt = QTextFrameFormat()
-            fFmt.setBorderStyle(QTextFrameFormat.BorderStyle.BorderStyle_None)
-            fFmt.setBackground(bgCol)
-            fFmt.setTopMargin(self._mSep[0])
-            fFmt.setBottomMargin(self._mSep[1])
+            cFmt = QTextTableCellFormat()
+            cFmt.setBottomBorder(1.0)
+            cFmt.setBottomBorderStyle(QTextFrameFormat.BorderStyle.BorderStyle_Dashed)
+            cFmt.setBottomBorderBrush(QBrush(self._theme.text))
 
-            bFmt = QTextBlockFormat(self._blockFmt)
-            bFmt.setAlignment(QtAlignCenter)
-            bFmt.setTopMargin(0.0)
-            bFmt.setBottomMargin(0.0)
-            bFmt.setLineHeight(100.0, QtPropLineHeight)
-
-            cFmt = QTextCharFormat(self._charFmt)
-            cFmt.setFontItalic(False)
-            cFmt.setFontUnderline(False)
-            cFmt.setFontStrikeOut(False)
-            cFmt.setFontWeight(QtFontNormal)
-            cFmt.setFontPointSize(0.75 * self._textFont.pointSizeF())
-            cFmt.setForeground(fgCol)
-
-            cursor.insertFrame(fFmt)
-            cursor.setBlockFormat(bFmt)
-            cursor.insertText(self._project.localLookup("New Page"), cFmt)
-            if root := self._document.rootFrame():
+            if table := cursor.insertTable(1, 1, tFmt):  # pragma: no branch
+                table.cellAt(0, 0).setFormat(cFmt)
+            if root := self._document.rootFrame():  # pragma: no branch
                 cursor.swap(root.lastCursorPosition())
 
     def _insertHorizontalRule(self, cursor: QTextCursor) -> None:
@@ -531,7 +540,10 @@ class ToQTextDocument(Tokenizer):
         cFmt = QTextCharFormat(self._charFmt)
         cFmt.setForeground(self._theme.head if hCol else self._theme.text)
         cFmt.setFontWeight(self._hWeight)
-        cFmt.setFontPointSize(self._sHead.get(hType, 1.0))
+        if self._fixedHeadings:
+            cFmt.setProperty(QTextCharFormat.Property.FontSizeAdjustment, self._fHead.get(hType, 0))
+        else:
+            cFmt.setFontPointSize(self._sHead.get(hType, 1.0))
         if hKey and self._useAnchors:
             cFmt.setAnchorNames([hKey])
             cFmt.setAnchor(True)

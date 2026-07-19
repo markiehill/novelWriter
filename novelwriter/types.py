@@ -23,8 +23,8 @@ from __future__ import annotations
 
 from typing import Literal
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QFont, QPainter, QPalette, QTextCharFormat, QTextCursor, QTextFormat
+from PyQt6.QtCore import QAbstractAnimation, Qt
+from PyQt6.QtGui import QColor, QFont, QKeySequence, QPainter, QPalette, QTextCharFormat, QTextCursor, QTextFormat
 from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QHeaderView, QSizePolicy, QStyle
 
 # Custom Types
@@ -62,6 +62,9 @@ QtTextUserProperty = QTextFormat.Property.UserProperty
 
 QtPropLineHeight = 1  # QTextBlockFormat.LineHeightTypes.ProportionalHeight
 
+QtElideLeft = Qt.TextElideMode.ElideLeft
+QtElideRight = Qt.TextElideMode.ElideRight
+
 # Painter Types
 
 QtTransparent = QColor(0, 0, 0, 0)
@@ -73,6 +76,8 @@ QtSolidLine = Qt.PenStyle.SolidLine
 QtPaintAntiAlias = QPainter.RenderHint.Antialiasing
 QtMouseOver = QStyle.StateFlag.State_MouseOver
 QtSelected = QStyle.StateFlag.State_Selected
+
+QAnimDeleteWhenStopped = QAbstractAnimation.DeletionPolicy.DeleteWhenStopped
 
 # Colour Types
 
@@ -89,17 +94,37 @@ QtAccessibleTextRole = Qt.ItemDataRole.AccessibleTextRole
 QtDecorationRole = Qt.ItemDataRole.DecorationRole
 QtDisplayRole = Qt.ItemDataRole.DisplayRole
 QtFontRole = Qt.ItemDataRole.FontRole
+QtForegroundRole = Qt.ItemDataRole.ForegroundRole
 QtTextAlignmentRole = Qt.ItemDataRole.TextAlignmentRole
 QtToolTipRole = Qt.ItemDataRole.ToolTipRole
 QtUserRole = Qt.ItemDataRole.UserRole
 
 # Keyboard and Mouse Buttons
 
+QtKeyReturn = Qt.Key.Key_Return
+QtKeyEnter = Qt.Key.Key_Enter
+QtKeyLeft = Qt.Key.Key_Left
+QtKeyRight = Qt.Key.Key_Right
+QtKeyUp = Qt.Key.Key_Up
+QtKeyDown = Qt.Key.Key_Down
+QtKeyPageUp = Qt.Key.Key_PageUp
+QtKeyPageDown = Qt.Key.Key_PageDown
+QtKeyTab = Qt.Key.Key_Tab
+QtKeyEscape = Qt.Key.Key_Escape
+QtKeyBackspace = Qt.Key.Key_Backspace
+
 QtModCtrl = Qt.KeyboardModifier.ControlModifier
 QtModNone = Qt.KeyboardModifier.NoModifier
 QtModShift = Qt.KeyboardModifier.ShiftModifier
+
+QKeyRedo = QKeySequence.StandardKey.Redo
+QKeyUndo = QKeySequence.StandardKey.Undo
+QKeySelectAll = QKeySequence.StandardKey.SelectAll
+
 QtMouseLeft = Qt.MouseButton.LeftButton
 QtMouseMiddle = Qt.MouseButton.MiddleButton
+
+QtWidgetShortcut = Qt.ShortcutContext.WidgetShortcut
 
 # Dialog Button Box Types
 

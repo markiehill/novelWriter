@@ -25,7 +25,8 @@ import logging
 
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import QModelIndex, QSize, Qt, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QEvent, QModelIndex, QSize, Qt, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QPainter, QPaintEvent, QPalette
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -36,6 +37,8 @@ from PyQt6.QtWidgets import (
     QLabel,
     QPushButton,
     QSpinBox,
+    QSplitter,
+    QSplitterHandle,
     QToolButton,
     QTreeView,
     QWidget,
@@ -43,7 +46,7 @@ from PyQt6.QtWidgets import (
 
 from novelwriter import CONFIG, SHARED
 from novelwriter.enum import nwStandardButton
-from novelwriter.types import QtMouseLeft, QtMouseMiddle, QtRoleAccept, QtRoleReject
+from novelwriter.types import QtHexArgb, QtMouseLeft, QtMouseMiddle, QtRoleAccept, QtRoleReject
 
 if TYPE_CHECKING:
     from enum import Enum
@@ -64,7 +67,7 @@ class NDialog(QDialog):
         done with the object, we instead set the dialog's parent to None
         so that it gets garbage collected when it runs out of scope.
         """
-        self.setParent(None)  # type: ignore
+        self.setParent(None)
 
     @pyqtSlot()
     def closeDialog(self) -> None:
@@ -79,13 +82,13 @@ class NToolDialog(NDialog):
     def __init__(self, parent: GuiMain) -> None:
         super().__init__(parent=parent)
         self.setModal(False)
-        if CONFIG.osDarwin:
+        if CONFIG.osDarwin:  # pragma: no cover
             self.setWindowFlag(Qt.WindowType.Tool)
 
     def activateDialog(self) -> None:
         """Activate dialog on various operating systems."""
         self.show()
-        if CONFIG.osWindows:
+        if CONFIG.osWindows:  # pragma: no cover
             self.activateWindow()
         self.raise_()
         QApplication.processEvents()
@@ -101,7 +104,7 @@ class NNonBlockingDialog(NDialog):
     def activateDialog(self) -> None:
         """Activate dialog on various operating systems."""
         self.show()
-        if CONFIG.osWindows:
+        if CONFIG.osWindows:  # pragma: no cover
             self.activateWindow()
         self.raise_()
         QApplication.processEvents()
@@ -117,7 +120,7 @@ class NFontDialog(QFontDialog):
         super().__init__(initial, parent)
 
         # Look for the button box and replace the buttons
-        if dlgBox := self.findChild(QDialogButtonBox):
+        if dlgBox := self.findChild(QDialogButtonBox):  # pragma: no branch
             self.btnOk = SHARED.theme.getStandardButton(nwStandardButton.OK, self)
             self.btnOk.clicked.connect(self.accept)
 
@@ -151,7 +154,11 @@ class NFontDialog(QFontDialog):
         dialog.exec()
         CONFIG.setFontWinSize(dialog.geometry())
 
-        return dialog.selectedFont(), dialog.result() == 1
+        font = dialog.selectedFont()
+        status = dialog.result() == 1
+        dialog.setParent(None)
+
+        return font, status
 
 
 class NTreeView(QTreeView):
@@ -285,23 +292,21 @@ class NPushButton(QPushButton):
         text: str,
         iconSize: QSize,
         icon: str | None = None,
-        color: str | None = None,
     ) -> None:
         super().__init__(parent=parent)
         self._icon = icon
-        self._color = color
         self.setText(text)
         self.setIconSize(iconSize)
-        self.updateIcon()
-
-    def updateIcon(self) -> None:
-        """Update the theme icon."""
-        if self._icon and self._color:
-            self.setIcon(SHARED.theme.getIcon(self._icon, self._color))
+        self.refreshTheme()
 
     def setText(self, text: str) -> None:
         """Overload the text setter to add padding."""
         return super().setText(f" {text}")
+
+    def refreshTheme(self) -> None:
+        """Update the theme icon."""
+        if self._icon:
+            self.setIcon(SHARED.theme.getIcon(self._icon))
 
 
 class NIconToolButton(QToolButton):
@@ -310,47 +315,66 @@ class NIconToolButton(QToolButton):
     A quicker way to create a tool button using the app theme.
     """
 
-    __slots__ = ("_color", "_icon")
+    __slots__ = ("_icon",)
 
-    def __init__(self, parent: QWidget, iconSize: QSize, icon: str | None = None, color: str | None = None) -> None:
+    def __init__(self, parent: QWidget, iconSize: QSize, icon: str | None = None) -> None:
         super().__init__(parent=parent)
         self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         self.setIconSize(iconSize)
         self.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        if icon and color:
-            self.setThemeIcon(icon, color)
+        if icon:  # pragma: no branch
+            self.setThemeIcon(icon)
 
-    def setThemeIcon(self, icon: str, color: str) -> None:
+    def setCheckable(self, checkable: bool) -> None:
+        """Overload the checkable setter to change the button style."""
+        super().setCheckable(checkable)
+        if checkable:
+            col = SHARED.theme.toggleCol.name(QtHexArgb)
+            self.setStyleSheet(f"QToolButton:checked {{background: {col};}}")
+
+    def setThemeIcon(self, icon: str) -> None:
         """Set an icon from the current theme."""
         self._icon = icon
-        self._color = color
-        self.setIcon(SHARED.theme.getIcon(icon, color))
+        self.setIcon(SHARED.theme.getIcon(icon))
 
-    def refreshIcon(self) -> None:
+    def refreshTheme(self) -> None:
         """Refresh the icon for theme updates."""
-        self.setIcon(SHARED.theme.getIcon(self._icon, self._color))
+        self.setIcon(SHARED.theme.getIcon(self._icon))
+        if self.isCheckable():
+            col = SHARED.theme.toggleCol.name(QtHexArgb)
+            self.setStyleSheet(f"QToolButton:checked {{background: {col};}}")
 
 
 class NIconToggleButton(QToolButton):
     """Custom: Modified QToolButton.
 
-    A quicker way to create a toggle button using the app theme.
+    A quicker way to create a toggle button that switches icon when
+    toggled, using the app theme. For toggle buttons that only need to
+    change background colour, use NIconToolButton with
+    setCheckable(True) instead.
     """
 
-    def __init__(self, parent: QWidget, iconSize: QSize, icon: str | None = None, color: str | None = None) -> None:
+    __slots__ = ("_icon", "_size")
+
+    def __init__(self, parent: QWidget, iconSize: QSize, icon: str | None = None) -> None:
         super().__init__(parent=parent)
         self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         self.setIconSize(iconSize)
         self.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.setCheckable(True)
         self.setStyleSheet("border: none; background: transparent;")
-        if icon and color:
-            self.setThemeIcon(icon, color)
+        if icon:  # pragma: no branch
+            self.setThemeIcon(icon)
 
-    def setThemeIcon(self, icon: str, color: str) -> None:
+    def setThemeIcon(self, icon: str) -> None:
         """Set an icon from the current theme."""
-        size = self.iconSize()
-        self.setIcon(SHARED.theme.getToggleIcon(icon, (size.width(), size.height()), color))
+        self._icon = icon
+        self._size = self.iconSize()
+        self.setIcon(SHARED.theme.getToggleIcon(icon, self._size.width(), self._size.height()))
+
+    def refreshTheme(self) -> None:
+        """Refresh the icon for theme updates."""
+        self.setIcon(SHARED.theme.getToggleIcon(self._icon, self._size.width(), self._size.height()))
 
 
 class NClickableLabel(QLabel):
@@ -363,3 +387,69 @@ class NClickableLabel(QLabel):
         if event.button() == QtMouseLeft:
             self.mouseClicked.emit()
         return super().mousePressEvent(event)
+
+
+class NClipLabel(QLabel):
+    """Custom: Clipping QLabel.
+
+    A QLabel that can be compressed narrower than its text, so long
+    labels are clipped instead of forcing a horizontal scroll bar. The
+    parent widget must have horizontal size policy set to expanding.
+    """
+
+    def minimumSizeHint(self) -> QSize:
+        """Override the minimum size hint to allow clipping."""
+        return QSize(10, super().minimumSizeHint().height())
+
+
+class NSplitterHandle(QSplitterHandle):
+    """Custom Widget: Highlighted Splitter Handle.
+
+    A splitter handle that is invisible until hovered or dragged, at
+    which point it lights up in the highlight colour.
+    """
+
+    def __init__(self, orientation: Qt.Orientation, parent: QSplitter) -> None:
+        super().__init__(orientation, parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        self._active = False
+        self._resizable = True
+
+    def setResizable(self, resizable: bool) -> None:
+        """Enable or disable the hover/drag highlight and the resize
+        cursor, for use when the adjacent pane cannot actually be resized.
+        """
+        self._resizable = resizable
+        if resizable:
+            isHorizontal = self.orientation() == Qt.Orientation.Horizontal
+            self.setCursor(Qt.CursorShape.SplitHCursor if isHorizontal else Qt.CursorShape.SplitVCursor)
+        else:
+            self._active = False
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+        self.update()
+
+    def event(self, event: QEvent | None) -> bool:
+        """Track hover state to trigger a repaint."""
+        if event is not None and event.type() in (QEvent.Type.HoverEnter, QEvent.Type.HoverLeave):
+            self._active = self._resizable and event.type() == QEvent.Type.HoverEnter
+            self.update()
+        return super().event(event)
+
+    def mousePressEvent(self, event: QMouseEvent | None) -> None:
+        """Keep the handle highlighted while being dragged."""
+        if self._resizable:
+            self._active = True
+            self.update()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent | None) -> None:
+        """Drop the highlight if the cursor has left the handle."""
+        super().mouseReleaseEvent(event)
+        self._active = self._resizable and self.underMouse()
+        self.update()
+
+    def paintEvent(self, event: QPaintEvent | None) -> None:
+        """Paint the handle in the highlight colour when active."""
+        if self._active:
+            painter = QPainter(self)
+            painter.fillRect(self.rect(), self.palette().color(QPalette.ColorRole.Highlight))

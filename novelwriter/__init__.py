@@ -166,6 +166,8 @@ def main(sysArgs: list | None = None) -> GuiMain | None:
             confPath = inArg
         elif inOpt == "--data":
             dataPath = inArg
+        else:  # pragma: no cover
+            pass
 
     if fmtColor:
         # This will overwrite the default level names, and also ensure that
@@ -239,8 +241,7 @@ def main(sysArgs: list | None = None) -> GuiMain | None:
         try:
             import ctypes
 
-            appID = f"io.novelwriter.{__version__}"
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(appID)  # type: ignore
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("io.novelwriter.app")  # type: ignore
         except Exception:
             pass  # Quietly ignore error
 

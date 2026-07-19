@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import logging
 
+from typing import NamedTuple
+
 from PyQt6.QtCore import Qt, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QAction, QCloseEvent, QKeyEvent, QKeySequence
 from PyQt6.QtWidgets import (
@@ -38,7 +40,7 @@ from PyQt6.QtWidgets import (
 )
 
 from novelwriter import CONFIG, SHARED
-from novelwriter.common import compact, describeFont, processDialogSymbols, uniqueCompact
+from novelwriter.common import compact, describeFont, processDialogSymbols, qtAddAction, uniqueCompact
 from novelwriter.config import DEF_GUI_DARK, DEF_GUI_LIGHT, DEF_ICONS, DEF_TREECOL
 from novelwriter.constants import nwLabels, nwQuotes, nwUnicode, trConst
 from novelwriter.dialogs.quotes import GuiQuoteSelect
@@ -52,10 +54,24 @@ from novelwriter.types import QtAlignCenter, QtRoleAccept, QtRoleReject
 logger = logging.getLogger(__name__)
 
 
+class GuiNeedsUpdate(NamedTuple):
+    """The update flags after settings have been processed."""
+
+    restart: bool
+    tree: bool
+    theme: bool
+    syntax: bool
+    spelling: bool
+    vim: bool
+    editor: bool
+    viewer: bool
+    viewport: bool
+
+
 class GuiPreferences(NDialog):
     """GUI: Preferences Dialog."""
 
-    newPreferencesReady = pyqtSignal(bool, bool, bool, bool)
+    newPreferencesReady = pyqtSignal(GuiNeedsUpdate)
 
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent=parent)
@@ -76,7 +92,7 @@ class GuiPreferences(NDialog):
         )
 
         # Search Box
-        self.searchAction = QAction(SHARED.theme.getIcon("search", "apply"), "")
+        self.searchAction = QAction(SHARED.theme.getIcon("search:apply"), "")
         self.searchAction.triggered.connect(self._gotoSearch)
 
         self.searchText = QLineEdit(self)
@@ -225,7 +241,7 @@ class GuiPreferences(NDialog):
         self.guiFont.setMinimumWidth(162)
         self.guiFont.setText(describeFont(self._guiFont))
         self.guiFont.setCursorPosition(0)
-        self.guiFontButton = NIconToolButton(self, iSz, "font", "tool")
+        self.guiFontButton = NIconToolButton(self, iSz, "font:tool")
         self.guiFontButton.setToolTip(self.tr("Select Font"))
         self.guiFontButton.clicked.connect(self._selectGuiFont)
         self.mainForm.addRow(
@@ -286,7 +302,7 @@ class GuiPreferences(NDialog):
         self.textFont.setMinimumWidth(162)
         self.textFont.setText(describeFont(CONFIG.textFont))
         self.textFont.setCursorPosition(0)
-        self.textFontButton = NIconToolButton(self, iSz, "font", "tool")
+        self.textFontButton = NIconToolButton(self, iSz, "font:tool")
         self.textFontButton.setToolTip(self.tr("Select Font"))
         self.textFontButton.clicked.connect(self._selectTextFont)
         self.mainForm.addRow(
@@ -413,7 +429,7 @@ class GuiPreferences(NDialog):
 
         # Backup Path
         self.backupPath = CONFIG.backupPath()
-        self.backupGetPath = QPushButton(SHARED.theme.getIcon("browse", "systemio"), self.tr("Browse"), self)
+        self.backupGetPath = QPushButton(SHARED.theme.getIcon("browse:systemio"), self.tr("Browse"), self)
         self.backupGetPath.setIconSize(iSz)
         self.backupGetPath.clicked.connect(self._backupFolder)
         self.mainForm.addRow(
@@ -421,6 +437,17 @@ class GuiPreferences(NDialog):
             self.backupGetPath,
             self.tr("Path: {0}").format(self.backupPath),
             editable="backupPath",
+        )
+
+        # Backup Interval
+        self.backupInterval = NComboBox(self)
+        for key, label in nwLabels.BACKUP_INTERVAL.items():
+            self.backupInterval.addItem(trConst(label), key)
+        self.backupInterval.setCurrentData(CONFIG.backupInterval, "session")
+        self.mainForm.addRow(
+            self.tr("Backup frequency"),
+            self.backupInterval,
+            self.tr("Keeps one backup for each time period."),
         )
 
         # Run When Closing
@@ -543,6 +570,17 @@ class GuiPreferences(NDialog):
             self.tabWidth,
             self.tr("The width of a tab key press in the editor and viewer."),
             unit=self.tr("px"),
+        )
+
+        # Line Height
+        self.lineHeight = NDoubleSpinBox(self, minVal=0.5, maxVal=3.0, step=0.05, prec=2)
+        self.lineHeight.setValue(CONFIG.lineHeight)
+        self.lineHeight.setFixedNumbersWidth(4)
+        self.mainForm.addRow(
+            self.tr("Line height"),
+            self.lineHeight,
+            self.tr("The relative line height in the editor and viewer."),
+            unit=self.tr("em"),
         )
 
         # Text Editing
@@ -726,16 +764,16 @@ class GuiPreferences(NDialog):
         self.mnLineSymbols = QMenu(self)
         for symbol in nwQuotes.ALLOWED:
             label = trConst(nwQuotes.SYMBOLS.get(symbol, nwQuotes.DASHES.get(symbol, "None")))
-            self.mnLineSymbols.addAction(
-                f"[ {symbol} ] {label}", lambda symbol=symbol: self._insertDialogLineSymbol(symbol)
-            )
+            qtAddAction(self.mnLineSymbols, f"[ {symbol} ] {label}", data=symbol)
+
+        self.mnLineSymbols.triggered.connect(self._insertDialogLineSymbol)
 
         self.dialogLine = QLineEdit(self)
         self.dialogLine.setMinimumWidth(100)
         self.dialogLine.setAlignment(QtAlignCenter)
         self.dialogLine.setText(" ".join(CONFIG.dialogLine))
 
-        self.dialogLineButton = NIconToolButton(self, iSz, "add", "add")
+        self.dialogLineButton = NIconToolButton(self, iSz, "add:add")
         self.dialogLineButton.setToolTip(self.tr("Select Symbol"))
         self.dialogLineButton.setMenu(self.mnLineSymbols)
 
@@ -902,7 +940,7 @@ class GuiPreferences(NDialog):
         self.fmtSQuoteOpen.setFixedWidth(boxFixed)
         self.fmtSQuoteOpen.setAlignment(QtAlignCenter)
         self.fmtSQuoteOpen.setText(CONFIG.fmtSQuoteOpen)
-        self.btnSQuoteOpen = NIconToolButton(self, iSz, "quote", "tool")
+        self.btnSQuoteOpen = NIconToolButton(self, iSz, "quote:tool")
         self.btnSQuoteOpen.setToolTip(self.tr("Select Symbol"))
         self.btnSQuoteOpen.clicked.connect(self._changeSingleQuoteOpen)
         self.mainForm.addRow(
@@ -918,7 +956,7 @@ class GuiPreferences(NDialog):
         self.fmtSQuoteClose.setFixedWidth(boxFixed)
         self.fmtSQuoteClose.setAlignment(QtAlignCenter)
         self.fmtSQuoteClose.setText(CONFIG.fmtSQuoteClose)
-        self.btnSQuoteClose = NIconToolButton(self, iSz, "quote", "tool")
+        self.btnSQuoteClose = NIconToolButton(self, iSz, "quote:tool")
         self.btnSQuoteClose.setToolTip(self.tr("Select Symbol"))
         self.btnSQuoteClose.clicked.connect(self._changeSingleQuoteClose)
         self.mainForm.addRow(
@@ -935,7 +973,7 @@ class GuiPreferences(NDialog):
         self.fmtDQuoteOpen.setFixedWidth(boxFixed)
         self.fmtDQuoteOpen.setAlignment(QtAlignCenter)
         self.fmtDQuoteOpen.setText(CONFIG.fmtDQuoteOpen)
-        self.btnDQuoteOpen = NIconToolButton(self, iSz, "quote", "tool")
+        self.btnDQuoteOpen = NIconToolButton(self, iSz, "quote:tool")
         self.btnDQuoteOpen.setToolTip(self.tr("Select Symbol"))
         self.btnDQuoteOpen.clicked.connect(self._changeDoubleQuoteOpen)
         self.mainForm.addRow(
@@ -951,7 +989,7 @@ class GuiPreferences(NDialog):
         self.fmtDQuoteClose.setFixedWidth(boxFixed)
         self.fmtDQuoteClose.setAlignment(QtAlignCenter)
         self.fmtDQuoteClose.setText(CONFIG.fmtDQuoteClose)
-        self.btnDQuoteClose = NIconToolButton(self, iSz, "quote", "tool")
+        self.btnDQuoteClose = NIconToolButton(self, iSz, "quote:tool")
         self.btnDQuoteClose.setToolTip(self.tr("Select Symbol"))
         self.btnDQuoteClose.clicked.connect(self._changeDoubleQuoteClose)
         self.mainForm.addRow(
@@ -1050,11 +1088,11 @@ class GuiPreferences(NDialog):
         """Toggle switch that depends on the backup on close switch."""
         self.askBeforeBackup.setEnabled(state)
 
-    @pyqtSlot(str)
-    def _insertDialogLineSymbol(self, symbol: str) -> None:
+    @pyqtSlot(QAction)
+    def _insertDialogLineSymbol(self, action: QAction) -> None:
         """Insert a symbol in the dialogue line box."""
         current = self.dialogLine.text()
-        values = processDialogSymbols(f"{current} {symbol}")
+        values = processDialogSymbols(f"{current} {action.data()}")
         self.dialogLine.setText(" ".join(values))
 
     @pyqtSlot(bool)
@@ -1107,13 +1145,20 @@ class GuiPreferences(NDialog):
         updateTheme = False
         needsRestart = False
         updateSyntax = False
+        updateSpelling = False
+        updateVimMode = False
         refreshTree = False
+        initEditor = False
+        initViewer = False
+        initViewport = False
 
         # Appearance
         guiLocale = self.guiLocale.currentData()
         lightTheme = self.lightTheme.currentData()
         darkTheme = self.darkTheme.currentData()
         iconTheme = self.iconTheme.currentData()
+        hideVScroll = self.hideVScroll.isChecked()
+        hideHScroll = self.hideHScroll.isChecked()
         useCharCount = self.useCharCount.isChecked()
 
         updateTheme |= CONFIG.lightTheme != lightTheme
@@ -1124,21 +1169,28 @@ class GuiPreferences(NDialog):
         refreshTree |= CONFIG.useCharCount != useCharCount
         updateSyntax |= CONFIG.lightTheme != lightTheme
         updateSyntax |= CONFIG.darkTheme != darkTheme
+        initViewport |= CONFIG.hideVScroll != hideVScroll
+        initViewport |= CONFIG.hideHScroll != hideHScroll
 
         CONFIG.guiLocale = guiLocale
         CONFIG.lightTheme = lightTheme
         CONFIG.darkTheme = darkTheme
         CONFIG.iconTheme = iconTheme
-        CONFIG.hideVScroll = self.hideVScroll.isChecked()
-        CONFIG.hideHScroll = self.hideHScroll.isChecked()
+        CONFIG.hideVScroll = hideVScroll
+        CONFIG.hideHScroll = hideHScroll
         CONFIG.nativeFont = self.nativeFont.isChecked()
         CONFIG.setGuiFont(self._guiFont)
         CONFIG.setPrimaryCount(useCharCount)
 
         # Document Style
+        textFont = self._textFont
+
+        initEditor |= CONFIG.textFont != textFont
+        initViewer |= CONFIG.textFont != textFont
+
         CONFIG.showFullPath = self.showFullPath.isChecked()
         CONFIG.incNotesWCount = self.incNotesWCount.isChecked()
-        CONFIG.setTextFont(self._textFont)
+        CONFIG.setTextFont(textFont)
 
         # Project View
         iconColTree = self.iconColTree.currentData()
@@ -1161,6 +1213,7 @@ class GuiPreferences(NDialog):
 
         # Project Backup
         CONFIG.setBackupPath(self.backupPath)
+        CONFIG.backupInterval = self.backupInterval.currentData()
         CONFIG.backupOnClose = self.backupOnClose.isChecked()
         CONFIG.askBeforeBackup = self.askBeforeBackup.isChecked()
 
@@ -1169,35 +1222,65 @@ class GuiPreferences(NDialog):
         CONFIG.userIdleTime = round(self.userIdleTime.value() * 60)
 
         # Text Flow
-        CONFIG.textWidth = self.textWidth.value()
-        CONFIG.focusWidth = self.focusWidth.value()
+        textWidth = self.textWidth.value()
+        focusWidth = self.focusWidth.value()
+        doJustify = self.doJustify.isChecked()
+        textMargin = self.textMargin.value()
+        tabWidth = self.tabWidth.value()
+        lineHeight = self.lineHeight.value()
+
+        initEditor |= CONFIG.doJustify != doJustify
+        initEditor |= CONFIG.tabWidth != tabWidth
+        initEditor |= CONFIG.lineHeight != lineHeight
+        initViewer |= CONFIG.doJustify != doJustify
+        initViewer |= CONFIG.tabWidth != tabWidth
+        initViewer |= CONFIG.lineHeight != lineHeight
+        initViewport |= CONFIG.textWidth != textWidth
+        initViewport |= CONFIG.focusWidth != focusWidth
+        initViewport |= CONFIG.textMargin != textMargin
+
+        CONFIG.textWidth = textWidth
+        CONFIG.focusWidth = focusWidth
         CONFIG.hideFocusFooter = self.hideFocusFooter.isChecked()
-        CONFIG.doJustify = self.doJustify.isChecked()
-        CONFIG.textMargin = self.textMargin.value()
-        CONFIG.tabWidth = self.tabWidth.value()
+        CONFIG.doJustify = doJustify
+        CONFIG.textMargin = textMargin
+        CONFIG.tabWidth = tabWidth
+        CONFIG.lineHeight = lineHeight
 
         # Text Editing
+        spellLanguage = self.spellLanguage.currentData()
+        cursorWidth = self.cursorWidth.value()
         scaleHeadings = self.scaleHeadings.isChecked()
         singleStarBold = self.singleStarBold.isChecked()
         lineHighlight = self.lineHighlight.isChecked()
+        showTabsNSpaces = self.showTabsNSpaces.isChecked()
+        showLineEndings = self.showLineEndings.isChecked()
 
         updateSyntax |= CONFIG.scaleHeadings != scaleHeadings
         updateSyntax |= CONFIG.singleStarBold != singleStarBold
         updateSyntax |= CONFIG.lineHighlight != lineHighlight
+        initEditor |= CONFIG.cursorWidth != cursorWidth
+        initEditor |= CONFIG.showTabsNSpaces != showTabsNSpaces
+        initEditor |= CONFIG.showLineEndings != showLineEndings
+        updateSpelling |= CONFIG.spellLanguage != spellLanguage
 
-        CONFIG.spellLanguage = self.spellLanguage.currentData()
+        CONFIG.spellLanguage = spellLanguage
         CONFIG.autoSelect = self.autoSelect.isChecked()
-        CONFIG.cursorWidth = self.cursorWidth.value()
+        CONFIG.cursorWidth = cursorWidth
         CONFIG.scaleHeadings = scaleHeadings
         CONFIG.singleStarBold = singleStarBold
         CONFIG.lineHighlight = lineHighlight
-        CONFIG.showTabsNSpaces = self.showTabsNSpaces.isChecked()
-        CONFIG.showLineEndings = self.showLineEndings.isChecked()
+        CONFIG.showTabsNSpaces = showTabsNSpaces
+        CONFIG.showLineEndings = showLineEndings
 
         # Editor Scrolling
-        CONFIG.autoScroll = self.autoScroll.isChecked()
-        CONFIG.autoScrollPos = self.autoScrollPos.value()
-        CONFIG.scrollPastEnd = self.scrollPastEnd.isChecked()
+        scrollPastEnd = self.scrollPastEnd.isChecked()
+
+        initViewport |= CONFIG.scrollPastEnd != scrollPastEnd
+
+        CONFIG.autoScroll = self.autoScroll.isChecked()  # Read on every keyPressEvent
+        CONFIG.autoScrollPos = self.autoScrollPos.value()  # Read on every keyPressEvent
+        CONFIG.scrollPastEnd = scrollPastEnd
 
         # Text Highlighting
         dialogueStyle = self.dialogStyle.currentData()
@@ -1220,7 +1303,7 @@ class GuiPreferences(NDialog):
         updateSyntax |= CONFIG.altDialogClose != altDialogClose
         updateSyntax |= CONFIG.highlightEmph != highlightEmph
         updateSyntax |= CONFIG.dottedModCodes != dottedModCodes
-        updateSyntax |= CONFIG.showMultiSpaces != showMultiSpaces
+        initEditor |= CONFIG.showMultiSpaces != showMultiSpaces
 
         CONFIG.dialogStyle = dialogueStyle
         CONFIG.allowOpenDial = allowOpenDial
@@ -1257,10 +1340,25 @@ class GuiPreferences(NDialog):
                 self.tr("This changes how the editor accepts input."),
             ])
         self.vimMode.setChecked(vimMode)
+
+        updateVimMode |= CONFIG.vimMode != vimMode
+
         CONFIG.vimMode = vimMode
 
         # Finalise
         CONFIG.saveConfig()
-        self.newPreferencesReady.emit(needsRestart, refreshTree, updateTheme, updateSyntax)
+        self.newPreferencesReady.emit(
+            GuiNeedsUpdate(
+                restart=needsRestart,
+                tree=refreshTree,
+                theme=updateTheme,
+                syntax=updateSyntax,
+                spelling=updateSpelling,
+                vim=updateVimMode,
+                editor=initEditor,
+                viewer=initViewer,
+                viewport=initViewport,
+            )
+        )
 
         self.close()

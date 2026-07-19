@@ -25,6 +25,7 @@ import json
 import logging
 import unicodedata
 import uuid
+import weakref
 import xml.etree.ElementTree as ET
 
 from configparser import ConfigParser
@@ -36,7 +37,7 @@ from urllib.parse import urljoin
 from urllib.request import pathname2url
 
 from PyQt6.QtCore import QCoreApplication, QLocale, QMimeData, QUrl
-from PyQt6.QtGui import QAction, QDesktopServices, QFont, QFontDatabase, QFontInfo
+from PyQt6.QtGui import QAction, QDesktopServices, QFont, QFontDatabase, QFontInfo, QIcon
 from PyQt6.QtWidgets import QMenu, QMenuBar, QWidget
 
 from novelwriter.constants import nwConst, nwLabels, nwQuotes, nwUnicode, trConst
@@ -45,6 +46,7 @@ from novelwriter.error import logException
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator
+    from types import MethodType
 
 logger = logging.getLogger(__name__)
 
@@ -231,14 +233,25 @@ def formatInt(value: int) -> str:
     return str(value)
 
 
-def formatTimeStamp(value: float, fileSafe: bool = False) -> str:
+def formatPercent(value: float | int, *, divisor: float | int | None = None, prec: int = 1) -> str:
+    """Format a number and optionally a divisor as a percentage."""
+    if not isinstance(value, (float, int)):
+        return "ERR"
+    if isinstance(divisor, (float, int)) and divisor != 0:
+        value = value / divisor
+    fmt = f"{{0:.{prec}f}}\u202f%"
+    return fmt.format(value * 100.0)
+
+
+def formatTimeStamp(value: float, fileSafe: bool = False, fmt: str | None = None) -> str:
     """Take a number (on the format returned by time.time()) and convert
     it to a timestamp string.
     """
-    if fileSafe:
-        return datetime.fromtimestamp(value).strftime(nwConst.FMT_FSTAMP)
-    else:
-        return datetime.fromtimestamp(value).strftime(nwConst.FMT_TSTAMP)
+    try:
+        result = datetime.fromtimestamp(value).strftime(nwConst.FMT_TSTAMP if fmt is None else fmt)
+        return result.replace(":", ".") if fileSafe else result
+    except Exception:
+        return "ERROR"
 
 
 def formatTime(t: int) -> str:
@@ -437,6 +450,8 @@ def numberToRoman(value: int, toLower: bool = False) -> str:
         value -= n * divisor
         if value <= 0:
             break
+    else:  # pragma: no cover
+        pass
 
     return roman.lower() if toLower else roman
 
@@ -545,15 +560,35 @@ def qtLambda(func: Callable, *args: Any, **kwargs: Any) -> Callable:
     return wrapper
 
 
-def qtAddAction(parent: QWidget, label: str) -> QAction:
-    """Helper to add action to widget and always return the action."""  # noqa: D401
+def qtWeakLambda(method: MethodType, *args: Any, **kwargs: Any) -> Callable:
+    """A qtLambda that only holds a weak reference to the bound method.
+    Use this instead of qtLambda when the slot is a method of the object
+    that also owns the signal, as the strong reference in qtLambda would
+    otherwise keep the object alive until the cyclic garbage collector
+    runs.
+    """  # noqa: D401
+    ref = weakref.WeakMethod(method)
+
+    def wrapper(*a_: Any) -> None:
+        if func := ref():
+            func(*args, **kwargs)
+
+    return wrapper
+
+
+def qtAddAction(parent: QWidget, label: str, *, icon: QIcon | None = None, data: Any | None = None) -> QAction:
+    """Add action to a widget and always return the action."""
     action = QAction(label, parent)
+    if icon is not None:
+        action.setIcon(icon)
+    if data is not None:
+        action.setData(data)
     parent.addAction(action)
     return action
 
 
 def qtAddMenu(parent: QMenuBar | QMenu, label: str) -> QMenu:
-    """Helper to add menu to menu and always return the menu."""  # noqa: D401
+    """Add a menu to a menu and always return the menu."""
     menu = QMenu(label, parent)
     parent.addMenu(menu)
     return menu
@@ -776,7 +811,7 @@ def openExternalPath(path: Path) -> bool:
 _T_Enum = TypeVar("_T_Enum", bound=Enum)
 
 
-class NWConfigParser(ConfigParser):
+class NConfigParser(ConfigParser):
     """Common: Adapted Config Parser.
 
     This is a subclass of the standard config parser that adds type safe

@@ -44,7 +44,7 @@ from PyQt6.QtWidgets import (
 )
 
 from novelwriter import CONFIG, SHARED
-from novelwriter.common import checkInt, checkIntTuple, formatTime, minmax, qtLambda
+from novelwriter.common import checkInt, checkIntTuple, formatPercent, formatTime, minmax, qtAddAction
 from novelwriter.constants import nwConst
 from novelwriter.enum import nwStandardButton
 from novelwriter.error import formatException
@@ -68,7 +68,7 @@ logger = logging.getLogger(__name__)
 class GuiWritingStats(NToolDialog):
     """GUI Tools: Writing Statistics.
 
-    Displays data from the NWSessionLog object.
+    Displays data from the SessionLog object.
     """
 
     C_TIME = 0
@@ -122,7 +122,7 @@ class GuiWritingStats(NToolDialog):
         self.listBox.setColumnWidth(self.C_COUNT, wCol3)
 
         hHeader = self.listBox.headerItem()
-        if hHeader is not None:
+        if hHeader is not None:  # pragma: no branch
             hHeader.setTextAlignment(self.C_LENGTH, QtAlignRight)
             hHeader.setTextAlignment(self.C_IDLE, QtAlignRight)
             hHeader.setTextAlignment(self.C_COUNT, QtAlignRight)
@@ -277,17 +277,12 @@ class GuiWritingStats(NToolDialog):
         self.btnClose.clicked.connect(self.closeDialog)
         self.btnClose.setAutoDefault(False)
 
-        self.saveJSON = QAction(self.tr("JSON Data File (.json)"), self)
-        self.saveJSON.triggered.connect(qtLambda(self._saveData, self.FMT_JSON))
-
-        self.saveCSV = QAction(self.tr("CSV Data File (.csv)"), self)
-        self.saveCSV.triggered.connect(qtLambda(self._saveData, self.FMT_CSV))
-
         self.saveMenu = QMenu(self)
-        self.saveMenu.addAction(self.saveJSON)
-        self.saveMenu.addAction(self.saveCSV)
+        self.saveMenu.triggered.connect(self._saveMenuTriggered)
+        qtAddAction(self.saveMenu, self.tr("JSON Data File (.json)"), data=self.FMT_JSON)
+        qtAddAction(self.saveMenu, self.tr("CSV Data File (.csv)"), data=self.FMT_CSV)
 
-        self.btnSave = NPushButton(self, self.tr("Save As"), bSz, "btn_save", "action")
+        self.btnSave = NPushButton(self, self.tr("Save As"), bSz, "btn_save:action")
         self.btnSave.setAutoDefault(False)
         self.btnSave.setMenu(self.saveMenu)
 
@@ -480,6 +475,11 @@ class GuiWritingStats(NToolDialog):
     #  Private Slots
     ##
 
+    @pyqtSlot(QAction)
+    def _saveMenuTriggered(self, action: QAction) -> None:
+        """Save the data in the format set on the menu action."""
+        self._saveData(action.data())
+
     @pyqtSlot()
     def _updateListBox(self) -> None:
         """Load/reload the content of the list box."""
@@ -566,8 +566,7 @@ class GuiWritingStats(NToolDialog):
             if showIdleTime:
                 idleEntry = formatTime(sIdle)
             else:
-                sRatio = sIdle / sDiff if sDiff > 0.0 else 0.0
-                idleEntry = f"{round(100.0 * sRatio)} %"
+                idleEntry = formatPercent(sIdle, divisor=sDiff, prec=0)
 
             newItem = QTreeWidgetItem()
             newItem.setText(self.C_TIME, sStart)

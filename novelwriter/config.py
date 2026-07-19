@@ -47,7 +47,7 @@ from PyQt6.QtGui import QFont, QFontDatabase, QFontMetrics
 from PyQt6.QtWidgets import QApplication
 
 from novelwriter.common import (
-    NWConfigParser,
+    NConfigParser,
     checkInt,
     checkPath,
     describeFont,
@@ -67,7 +67,7 @@ from novelwriter.error import formatException, logException
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from novelwriter.core.projectdata import NWProjectData
+    from novelwriter.core.projectdata import ProjectData
     from novelwriter.splash import NSplashScreen
 
 logger = logging.getLogger(__name__)
@@ -121,6 +121,7 @@ class Config:
         "autoScroll",
         "autoScrollPos",
         "autoSelect",
+        "backupInterval",
         "backupOnClose",
         "countUnit",
         "cursorWidth",
@@ -161,6 +162,7 @@ class Config:
         "kernelVer",
         "lastNotes",
         "lightTheme",
+        "lineHeight",
         "lineHighlight",
         "mainPanePos",
         "mainWinSize",
@@ -182,11 +184,13 @@ class Config:
         "searchLoop",
         "searchMatchCap",
         "searchNextFile",
+        "searchPanePos",
         "searchProjCase",
         "searchProjRegEx",
         "searchProjWord",
         "searchRegEx",
         "searchWord",
+        "showDetailsPanel",
         "showEditToolBar",
         "showFullPath",
         "showLineEndings",
@@ -307,6 +311,7 @@ class Config:
         self.mainPanePos = [300, 800]  # Last position of the main window splitter
         self.viewPanePos = [500, 150]  # Last position of the document viewer splitter
         self.outlinePanePos = [500, 150]  # Last position of the outline panel splitter
+        self.searchPanePos = [150, 500]  # Last position of the project search splitter
         self.moveMainWin = True  # Move main window to the screen middle on startup
 
         # Project Settings
@@ -314,6 +319,7 @@ class Config:
         self.autoSaveDoc = 30  # Interval for auto-saving document, in seconds
         self.emphLabels = False  # Add emphasis to H1 and H2 item labels
         self.backupOnClose = True  # Flag for running automatic backups
+        self.backupInterval = "session"  # Backup interval
         self.askBeforeBackup = True  # Flag for asking before running automatic backup
         self.askBeforeExit = True  # Flag for asking before exiting the app
 
@@ -322,6 +328,7 @@ class Config:
         self.textWidth = 700  # Editor text width
         self.textMargin = 40  # Editor/viewer text margin
         self.tabWidth = 40  # Editor tabulator width
+        self.lineHeight = 1.0  # Editor line height
         self.cursorWidth = 1  # Editor cursor width
         self.lineHighlight = False  # Highlight current line in editor
 
@@ -378,6 +385,7 @@ class Config:
         self.spellLanguage = "en"
 
         # State
+        self.showDetailsPanel = True  # The panel for the item details is visible
         self.showViewerPanel = True  # The panel for the viewer is visible
         self.showEditToolBar = False  # The document editor toolbar visibility
         self.showSessionTime = True  # Show the session time in the status bar
@@ -741,7 +749,7 @@ class Config:
 
         logger.debug("Loading config file")
 
-        conf = NWConfigParser()
+        conf = NConfigParser()
         cnfPath = self._confPath / nwFiles.CONF_FILE
 
         if not safeExists(cnfPath):
@@ -788,6 +796,7 @@ class Config:
         self.mainPanePos = conf.rdIntList(sec, "mainpane", self.mainPanePos)
         self.viewPanePos = conf.rdIntList(sec, "viewpane", self.viewPanePos)
         self.outlinePanePos = conf.rdIntList(sec, "outlinepane", self.outlinePanePos)
+        self.searchPanePos = conf.rdIntList(sec, "searchpane", self.searchPanePos)
         self.moveMainWin = conf.rdBool(sec, "movemainwin", self.moveMainWin)
 
         # Project
@@ -797,6 +806,7 @@ class Config:
         self.emphLabels = conf.rdBool(sec, "emphlabels", self.emphLabels)
         self._backupPath = conf.rdPath(sec, "backuppath", self._backupPath)
         self.backupOnClose = conf.rdBool(sec, "backuponclose", self.backupOnClose)
+        self.backupInterval = conf.rdStr(sec, "backupinterval", self.backupInterval)
         self.askBeforeBackup = conf.rdBool(sec, "askbeforebackup", self.askBeforeBackup)
         self.askBeforeExit = conf.rdBool(sec, "askbeforeexit", self.askBeforeExit)
         self._lastAuthor = conf.rdStr(sec, "lastauthor", self._lastAuthor)
@@ -807,6 +817,7 @@ class Config:
         self.textWidth = conf.rdInt(sec, "width", self.textWidth)
         self.textMargin = conf.rdInt(sec, "margin", self.textMargin)
         self.tabWidth = conf.rdInt(sec, "tabwidth", self.tabWidth)
+        self.lineHeight = conf.rdFlt(sec, "lineheight", self.lineHeight)
         self.cursorWidth = conf.rdInt(sec, "cursorwidth", self.cursorWidth)
         self.lineHighlight = conf.rdBool(sec, "linehighlight", self.lineHighlight)
         self.focusWidth = conf.rdInt(sec, "focuswidth", self.focusWidth)
@@ -850,6 +861,7 @@ class Config:
 
         # State
         sec = "State"
+        self.showDetailsPanel = conf.rdBool(sec, "showdetailspanel", self.showDetailsPanel)
         self.showViewerPanel = conf.rdBool(sec, "showviewerpanel", self.showViewerPanel)
         self.showEditToolBar = conf.rdBool(sec, "showedittoolbar", self.showEditToolBar)
         self.showSessionTime = conf.rdBool(sec, "showsessiontime", self.showSessionTime)
@@ -891,7 +903,7 @@ class Config:
         """Save the current preferences to file."""
         logger.debug("Saving config file")
 
-        conf = NWConfigParser()
+        conf = NConfigParser()
 
         conf["Meta"] = {
             "timestamp": formatTimeStamp(time()),
@@ -922,6 +934,7 @@ class Config:
             "mainpane": self._packList(self.mainPanePos),
             "viewpane": self._packList(self.viewPanePos),
             "outlinepane": self._packList(self.outlinePanePos),
+            "searchpane": self._packList(self.searchPanePos),
             "movemainwin": str(self.moveMainWin),
         }
 
@@ -931,6 +944,7 @@ class Config:
             "emphlabels": str(self.emphLabels),
             "backuppath": str(self._backupPath),
             "backuponclose": str(self.backupOnClose),
+            "backupinterval": str(self.backupInterval),
             "askbeforebackup": str(self.askBeforeBackup),
             "askbeforeexit": str(self.askBeforeExit),
             "lastauthor": str(self._lastAuthor),
@@ -941,6 +955,7 @@ class Config:
             "width": str(self.textWidth),
             "margin": str(self.textMargin),
             "tabwidth": str(self.tabWidth),
+            "lineheight": str(self.lineHeight),
             "cursorwidth": str(self.cursorWidth),
             "lineHighlight": str(self.lineHighlight),
             "focuswidth": str(self.focusWidth),
@@ -984,6 +999,7 @@ class Config:
         }
 
         conf["State"] = {
+            "showdetailspanel": str(self.showDetailsPanel),
             "showviewerpanel": str(self.showViewerPanel),
             "showedittoolbar": str(self.showEditToolBar),
             "showsessiontime": str(self.showSessionTime),
@@ -1103,7 +1119,7 @@ class RecentProjects:
             (str(k), str(e["title"]), checkInt(e["words"], 0), checkInt(e["time"], 0)) for k, e in self._data.items()
         ]
 
-    def update(self, path: str | Path, data: NWProjectData, saved: float | int) -> None:
+    def update(self, path: str | Path, data: ProjectData, saved: float | int) -> None:
         """Add or update recent cache information on a given project."""
         try:
             if (remove := self._map.get(data.uuid)) and (remove != str(path)):
