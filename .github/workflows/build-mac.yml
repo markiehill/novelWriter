@@ -163,6 +163,33 @@ jobs:
             EXTRA=(--codesign-identity "$SIGN_IDENTITY"
                    --osx-entitlements-file setup/macos/App.entitlements)
           fi
+
+          # Bundle enchant explicitly. PyInstaller's stock enchant hook does
+          # NOT ship a working spell checker here: pyenchant is pip-installed
+          # (so the hook's brew/macports collection branch is skipped), and
+          # the enchant backend plugins are dlopen-ed at runtime, so Mach-O
+          # dependency analysis never sees them. Without this the shipped app
+          # has an empty dictionary list (see issue #2705). We add libenchant
+          # and the applespell backend from Homebrew, keeping the lib/ +
+          # lib/enchant-2/ sibling layout that relocatable enchant-2 uses to
+          # find backends. The applespell backend delegates to the macOS
+          # system spell checker (NSSpellChecker), so it exposes the OS
+          # dictionaries with no bundled dictionary data. The aspell backend
+          # is deliberately NOT bundled: its word-list data is not shipped, so
+          # on a clean Mac it would register zero dictionaries while dragging
+          # in libaspell — dead weight with no benefit over applespell.
+          # brew --prefix is arch-agnostic (/opt/homebrew or /usr/local).
+          ENCHANT_PREFIX="$(brew --prefix enchant)"
+          LIBENCHANT="$(ls "$ENCHANT_PREFIX"/lib/libenchant-2.*.dylib | head -n1)"
+          APPLESPELL="$ENCHANT_PREFIX/lib/enchant-2/enchant_applespell.so"
+          test -f "$APPLESPELL" \
+            || { echo "ERROR: enchant applespell backend not found at $APPLESPELL"; exit 1; }
+          EXTRA+=(--add-binary "$LIBENCHANT:lib")
+          EXTRA+=(--add-binary "$APPLESPELL:lib/enchant-2")
+          # Runtime hook points pyenchant at the bundled libenchant (via
+          # PYENCHANT_LIBRARY_PATH) before novelWriter lazily imports enchant.
+          EXTRA+=(--runtime-hook setup/macos/pyinstaller_rthook_enchant.py)
+
           # novelwriter itself is bundled by module-graph analysis of the
           # entry script (no dynamic imports), so --collect-all novelwriter
           # is unnecessary — and on case-insensitive macOS it resolves the
@@ -213,6 +240,14 @@ jobs:
             || { echo "ERROR: compiled .qm files not bundled"; exit 1; }
           test -n "$(find "$APP_FW/assets/icons" -name '*.icons' 2>/dev/null)" \
             || { echo "ERROR: icon themes not bundled"; exit 1; }
+          # Guard against silently shipping a spell checker with no backend
+          # (the empty-dropdown regression from #2705). libenchant and the
+          # applespell backend (which exposes the OS dictionaries) must both
+          # be present.
+          test -n "$(ls "$APP_FW"/lib/libenchant-2.*.dylib 2>/dev/null)" \
+            || { echo "ERROR: libenchant not bundled"; exit 1; }
+          test -f "$APP_FW/lib/enchant-2/enchant_applespell.so" \
+            || { echo "ERROR: enchant applespell backend not bundled"; exit 1; }
           plutil -extract CFBundleIdentifier raw dist/novelWriter.app/Contents/Info.plist
           plutil -extract CFBundleShortVersionString raw dist/novelWriter.app/Contents/Info.plist
 
